@@ -13,7 +13,7 @@ from locust import HttpUser, task, between, events
 LOG_DIR = Path(os.getenv("LOG_DIR", "/logs")).resolve()
 CLIENT_JSONL = LOG_DIR / os.getenv("LOCUST_CLIENT_JSONL", "locust_client_log.jsonl")
 
-# -------- Konfiguracja Czasowa (Domyślna) --------
+# -------- Konfiguracja Czasowa --------
 # Klasy będą mogły to nadpisywać, aby symulować np. bota vs człowieka
 WAIT_MIN = float(os.getenv("TIME_BETWEEN_REQUESTS_MIN", "0.5"))
 WAIT_MAX = float(os.getenv("TIME_BETWEEN_REQUESTS_MAX", "2.0"))
@@ -21,7 +21,7 @@ WAIT_MAX = float(os.getenv("TIME_BETWEEN_REQUESTS_MAX", "2.0"))
 # -------- Parametry Aplikacji --------
 RATES_N = int(os.getenv("RATES_N", "3"))
 
-# -------- Konfiguracja "Market Behavior Complexity" (Nowość) --------
+# -------- Konfiguracja "Market Behavior Complexity" --------
 # Zmienne sterujące realizmem symulacji (szum, sesje, błędy)
 
 # 1. Zarządzanie długością sesji (aby uniknąć nieskończonych logów jednego usera)
@@ -62,9 +62,7 @@ def append_jsonl(path: Path, row: Dict[str, Any]) -> None:
 # -------- Listener Zdarzeń --------
 @events.request.add_listener
 def _log_request(request_type, name, response_time, response_length, response, context, exception, **kwargs):
-    """
-    Zapisuje to, co widzi klient Locusta (diagnostyka i porównania z backendem).
-    """
+    """Zapisuje to, co widzi klient Locusta (diagnostyka i porównania z backendem)."""
     try:
         req_id = None
         status_code = None
@@ -73,7 +71,6 @@ def _log_request(request_type, name, response_time, response_length, response, c
             req_id = response.headers.get("X-Request-ID")
             status_code = response.status_code
         elif exception:
-            # Locust czasem przypisuje wyjątek, nie dając response
             status_code = 0 
 
         row = {
@@ -134,13 +131,9 @@ class BaseUser(HttpUser):
             self.email = f"{self.username}@example.test"
             self._sign_up()
             
-        self._reset_session(is_sudden=False)
-        
-        # --- NOWE: Dodajemy każdemu użytkownikowi startowy kapitał ---
+        self._reset_session(is_sudden=False, is_initial=True)
         self._put("/api/user/funds/", json={"money": 250000}, name="USER: funds PUT (init)", count_task=False)
-            
-        # Otwieramy pierwszą sesję roboczą
-        self._reset_session(is_sudden=False)
+        self._reset_session(is_sudden=False, is_initial=True)
 
 
     def _sign_up(self):
@@ -159,15 +152,18 @@ class BaseUser(HttpUser):
         )
 
 
-    def _reset_session(self, is_sudden: bool = False):
+    def _reset_session(self, is_sudden: bool = False, is_initial: bool = False):
         """
         Główny silnik podziału danych dla modelu AI.
         Zmienia identyfikator sesji i symuluje ponowne zalogowanie (nowy cykl).
         """
         if is_sudden:
-            # Symulacja "zerwania połączenia" – usunięcie tokenu i chwila pauzy
             self.token = None
             time.sleep(random.uniform(1.0, 5.0))
+        elif not is_initial:
+            # ZMIANA: Naturalny koniec sesji. Użytkownik "wychodzi" z aplikacji na jakiś czas.
+            self.token = None
+            time.sleep(random.uniform(10.0, 60.0))
 
         self.session_id = str(uuid.uuid4())
         self.task_counter = 0
@@ -214,6 +210,25 @@ class BaseUser(HttpUser):
         if random.random() < SUDDEN_LOGOUT_PROB:
             self._reset_session(is_sudden=True)
 
+    
+    @task(1)
+    def universal_brain_fog(self):
+        """
+        Każdy wirtualny użytkownik ma czasem 'zaćmienie umysłu'.
+        Symuluje przypadkowe kliknięcia, gubienie się na stronie i pomyłki.
+        Gwarantuje, że profil (np. StrategicHolder) nie jest 100% idealny.
+        """
+        action = random.choice(["settings", "check_funds", "lost_404", "invalid_calc"])
+        if action == "settings":
+            self._post("/api/user/settings/", json={"theme": "random"}, name="NOISE: settings update")
+        elif action == "check_funds":
+            self._get("/api/user/funds/", name="NOISE: random funds check")
+        elif action == "lost_404":
+            # Wywołujemy specjalny, nieistniejący endpoint, by złapać Error
+            self._get("/api/invalid-url-404/", name="NOISE: 404 page", count_task=False)
+        elif action == "invalid_calc":
+            if self.company_ids:
+                self._post("/api/buyoffers/calculate/", json={"company": random.choice(self.company_ids), "amount": 9999999}, name="NOISE: calc error")
 
     # ======================================================================
     # --------- Helpery HTTP (z wbudowanym sprawdzaniem TTL) ---------
@@ -281,8 +296,6 @@ class WindowShopper(BaseUser):
     ale NIGDY nie wysyła POST /api/buyoffers/ (nigdy nie finalizuje transakcji).
     """
     request_class = "WindowShopper"
-    
-    # Człowiek - czyta powoli. Nadpisujemy domyślne szybkie czasy.
     wait_time = between(1.5, 4.0)
 
     @task(4)
@@ -295,14 +308,11 @@ class WindowShopper(BaseUser):
         
     @task(2)
     def portfolio_analysis(self):
-        # Udaje, że dogłębnie analizuje swój portfel (używane też przez CarefulTrader)
         self._get("/api/user/portfolio-analysis/", name="USER: portfolio-analysis")
 
     @task(3)
     def simulate_buy(self):
-        """Kluczowa zmyłka: Używa POST w kontekście zakupowym, ale to tylko symulacja."""
-        if not self.company_ids:
-            return
+        if not self.company_ids: return
         company_id = random.choice(self.company_ids)
         amount = random.randint(10, 500)
         self._post(
@@ -313,9 +323,7 @@ class WindowShopper(BaseUser):
 
     @task(1)
     def add_to_watchlist(self):
-        """Kolejna zmyłka: Zapis do bazy (POST), który utrudnia klasyfikację po metodzie HTTP."""
-        if not self.company_ids:
-            return
+        if not self.company_ids: return
         company_id = random.choice(self.company_ids)
         self._post(
             "/api/user/watchlist/",
@@ -325,10 +333,9 @@ class WindowShopper(BaseUser):
 
     @task(1)
     def change_settings(self):
-        """Wprowadza całkowity szum systemowy."""
         self._post(
-            "/api/user/settings/", 
-            json={"theme": random.choice(["dark", "light", "system"])}, 
+            "/api/user/settings/",
+            json={"theme": random.choice(["dark", "light", "system"])},
             name="USER: settings POST"
         )
 
@@ -344,21 +351,14 @@ class ImpulsiveTrader(BaseUser):
     Często popełnia błędy (brak środków) i chaotycznie zmienia zdanie (edycja/anulowanie).
     """
     request_class = "ImpulsiveTrader"
-    
-    # Bardzo szybki czas reakcji (panika lub bot)
     wait_time = between(0.1, 0.6)
 
     @task(5)
     def impulsive_buy(self):
         """Kupuje bez sprawdzania kalkulatora i bez patrzenia na wykresy."""
-        if not self.company_ids:
-            return
-            
+        if not self.company_ids: return
         company_id = random.choice(self.company_ids)
-        
-        # CELOWE WSTRZYKIWANIE BŁĘDÓW: 
-        # Czasem strzela ogromnymi kwotami, żeby backend odrzucił to błędem 400 (Brak środków)
-        is_mistake = random.random() < HUMAN_ERROR_PROB * 3  # Impulsywny myli się 3x częściej
+        is_mistake = random.random() < HUMAN_ERROR_PROB * 3 
         amount = random.randint(1000, 5000) if is_mistake else random.randint(1, 10)
 
         self._post(
@@ -366,8 +366,6 @@ class ImpulsiveTrader(BaseUser):
             json={"company": company_id, "startAmount": amount, "amount": amount},
             name="BUY: create"
         )
-        
-        # Natychmiast po "klliknięciu" nerwowo sprawdza, czy przeszło
         self._get("/api/user/trade-history/", name="USER: trade-history")
 
     @task(2)
@@ -412,8 +410,6 @@ class CarefulTrader(BaseUser):
     Zanim cokolwiek kupi, sprawdza kursy, analizę portfela i kalkulator.
     """
     request_class = "CarefulTrader"
-    
-    # Powolny i rozważny
     wait_time = between(2.0, 6.0)
 
     @task(3)
@@ -448,6 +444,8 @@ class CarefulTrader(BaseUser):
         # 5. Bezpieczny zakup - kupuje tylko jeśli ma 100% pewności, że go stać
         # Uproszczenie symulacji: zakładamy, że bezpieczny limit to 500
         if funds > 500:
+            if random.random() < 0.02:
+                amount *= 1000
             self._post(
                 "/api/buyoffers/",
                 json={"company": company_id, "startAmount": amount, "amount": amount},
@@ -489,19 +487,12 @@ class IndecisiveTrader(BaseUser):
     Kluczowa jest mikroskopijna różnica czasu (delta_t) między POST a DELETE.
     """
     request_class = "IndecisiveTrader"
-    
-    # Działa stosunkowo szybko
     wait_time = between(0.5, 1.5)
 
     @task(1)
     def buy_and_cancel_loop(self):
-        if not self.company_ids:
-            return
-            
+        if not self.company_ids: return
         company_id = random.choice(self.company_ids)
-        
-        # WSTRZYKIWANIE BŁĘDU: 20% szans, że przestrzeli z gotówką, 
-        # utrudniając AI odróżnienie go od ImpulsiveTradera
         is_mistake = random.random() < 0.2
         amount = random.randint(5000, 10000) if is_mistake else random.randint(1, 3)
 
@@ -535,15 +526,11 @@ class StrategicHolder(BaseUser):
     Brak użycia endpontów pomocniczych (/calculate/).
     """
     request_class = "StrategicHolder"
-    
-    # Bardzo powolny, inwestor długoterminowy
     wait_time = between(5.0, 15.0)
 
     @task(1)
     def sniper_logic(self):
-        if not self.company_ids:
-            return
-
+        if not self.company_ids: return
         company_id = random.choice(self.company_ids)
 
         # 1. Sprawdza swój portfel

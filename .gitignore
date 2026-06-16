@@ -13,3 +13,10 @@ celerybeat-schedule*
 *.rdb
 legacy
 logs
+
+# dane
+*.pt
+*.zip
+
+# opcjonalnie
+*.ckpt

@@ -5,15 +5,19 @@ import shutil
 import torch
 import torch.nn as nn
 import os
+import sys
 import json
 import time
 from pathlib import Path
+from collections import Counter
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importy z Twoich modułów
 from model.bilstm_fusion import BiLSTMFusion, BiLSTMFusionConfig
-from scripts.data_loader import build_data_loader
-from scripts.solver import build_optimizer, build_scheduler
-from scripts.utils import TrainingLogger, Checkpointer, calculate_metrics
+from helpers.data_loader import build_data_loader
+from helpers.solver import build_optimizer, build_scheduler
+from helpers.utils import TrainingLogger, Checkpointer, calculate_metrics
 
 def main(args):
     # 1. Wczytanie konfiguracji
@@ -31,7 +35,7 @@ def main(args):
     shutil.copy(args.config, output_dir / "config.yaml")
     
     # 2. Logger
-    logger = TrainingLogger(str(output_dir))
+    logger = TrainingLogger(str(output_dir)).logger
     logger.info(f"Starting training with config: {args.config}")
     logger.info(f"Output dir: {output_dir}")
     logger.info(f"Device: {device}")
@@ -72,7 +76,30 @@ def main(args):
     # 5. Solver
     optimizer = build_optimizer(model, cfg["SOLVER"])
     scheduler = build_scheduler(optimizer, cfg["SOLVER"])
-    criterion = nn.CrossEntropyLoss()
+    # --- DYNAMICZNE WYLICZANIE WAG KLAS ---
+    logger.info("Calculating dynamic class weights directly from file...")
+    
+    train_data_raw = torch.load(cfg["DATA"]["TRAIN_PATH"], weights_only=False)
+    all_train_labels = [item["labels"].item() for item in train_data_raw]
+    del train_data_raw  # Zwolnienie pamięci RAM
+
+    class_counts = Counter(all_train_labels)
+    total_samples = len(all_train_labels)
+    num_classes = int(cfg["MODEL"]["NUM_CLASSES"])
+
+    weights = torch.zeros(num_classes, dtype=torch.float32)
+    for c in range(num_classes):
+        count = class_counts.get(c, 0)
+        if count > 0:
+            weights[c] = total_samples / (num_classes * count)
+        else:
+            weights[c] = 0.0
+
+    weights = weights.to(device)
+    criterion = nn.CrossEntropyLoss(weight=weights)
+
+    logger.info(f"Class counts in train: {dict(class_counts)}")
+    logger.info(f"Applied Class Weights: {weights.cpu().numpy()}")
 
     # 6. Checkpointer
     checkpointer = Checkpointer(model, optimizer, scheduler, output_dir)
@@ -104,6 +131,10 @@ def main(args):
         time_feats = batch["time_feats"].to(device)
         lengths = batch["lengths"].to(device)
         labels = batch["labels"].to(device)
+
+        # --- ABLATION STUDY: Wyzerowanie czasu ---
+        #time_feats = torch.zeros_like(time_feats)
+        # -----------------------------------------
 
         # Forward
         logits = model(event_ids, time_feats, lengths)
@@ -139,12 +170,12 @@ def main(args):
                 f"LR: {lr:.6f} | "
                 f"ETA: {eta_str}"
             )
-            logger.info(log_msg)
+            logger.debug(log_msg)
             
             # Zapis do metrics.json (trening)
             file_metrics = {"iter": iteration, "phase": "train", "loss": loss.item(), "lr": lr}
             file_metrics.update(metrics)
-            logger.log_metrics(file_metrics)
+            #logger.debug(file_metrics)
 
         # --- CHECKPOINT ---
         if iteration % int(cfg["PERIODS"]["CHECKPOINT_PERIOD"]) == 0:
@@ -165,6 +196,10 @@ def main(args):
                     v_len = val_batch["lengths"].to(device)
                     v_lbl = val_batch["labels"].to(device)
 
+                    # --- ABLATION STUDY: Wyzerowanie czasu ---
+                    #v_time = torch.zeros_like(v_time)
+                    # -----------------------------------------
+
                     v_logits = model(v_event, v_time, v_len)
                     v_loss = criterion(v_logits, v_lbl)
                     
@@ -183,7 +218,7 @@ def main(args):
             # Zapis do metrics.json (walidacja)
             val_file_metrics = {"iter": iteration, "phase": "val", "loss": avg_loss}
             val_file_metrics.update(avg_mets)
-            logger.log_metrics(val_file_metrics)
+            logger.info(val_file_metrics)
             
             # Zapis najlepszego modelu (według F1)
             if avg_mets['f1'] > best_val_f1:

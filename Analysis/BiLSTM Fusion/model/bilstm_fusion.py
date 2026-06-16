@@ -15,7 +15,7 @@ class BiLSTMFusionConfig:
     event_embed_dim: int = 128
     
     # --- time features ---
-    time_feat_dim: int = 4              # [latency_ms, db_time_ms, app_time_ms, delta_t]
+    time_feat_dim: int = 1              # [latency_ms, db_time_ms, app_time_ms, delta_t]
     time_embed_dim: int = 64
     time_mlp_hidden: int = 128
     

@@ -10,78 +10,38 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from sklearn.metrics import classification_report, confusion_matrix
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importy z Twoich modułów
 from model.bilstm_fusion import BiLSTMFusion, BiLSTMFusionConfig
-from scripts.data_loader import build_data_loader
+from helpers.data_loader import build_data_loader
+from helpers.utils import TrainingLogger, save_plots
 
 # Definicja klas (musi być zgodna z process_data.py)
-CLASS_NAMES = [
-    "WindowShopper", 
-    "ImpulsiveTrader", 
-    "CarefulTrader", 
-    "IndecisiveTrader", 
-    "StrategicHolder"
-]
+# CLASS_NAMES = [
+#     "WindowShopper", 
+#     "ImpulsiveTrader", 
+#     "CarefulTrader", 
+#     "IndecisiveTrader", 
+#     "StrategicHolder"
+#]
 
-def save_plots(cm, report_dict, output_dir):
-    """Generuje i zapisuje profesjonalne wykresy do folderu results."""
-    
-    # Ustawienie stylu
-    sns.set_style("whitegrid")
-    plt.rcParams.update({'font.size': 12})
+CLASS_NAMES = ["Abandon", "Purchase"]
 
-    # --- 1. Macierz Pomyłek (Liczbowa) ---
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES, cbar=False)
-    plt.ylabel('Prawdziwa Klasa', fontweight='bold')
-    plt.xlabel('Przewidziana Klasa', fontweight='bold')
-    plt.title('Macierz Pomyłek (Liczbowa)', fontsize=14)
-    plt.tight_layout()
-    plt.savefig(output_dir / "confusion_matrix_count.png", dpi=300)
-    plt.close()
-
-    # --- 2. Macierz Pomyłek (Znormalizowana - %) ---
-    # Normalizacja wierszami (True Label)
-    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm_norm, annot=True, fmt='.2%', cmap='Greens', 
-                xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES, cbar=False)
-    plt.ylabel('Prawdziwa Klasa', fontweight='bold')
-    plt.xlabel('Przewidziana Klasa', fontweight='bold')
-    plt.title('Macierz Pomyłek (Znormalizowana)', fontsize=14)
-    plt.tight_layout()
-    plt.savefig(output_dir / "confusion_matrix_norm.png", dpi=300)
-    plt.close()
-
-    # --- 3. Wykres Metryk per Klasa (Bar Chart) ---
-    # Konwersja raportu do DataFrame
-    data = []
-    for cls in CLASS_NAMES:
-        if cls in report_dict:
-            row = report_dict[cls]
-            data.append({"Klasa": cls, "Metryka": "Precision", "Wartość": row['precision']})
-            data.append({"Klasa": cls, "Metryka": "Recall", "Wartość": row['recall']})
-            data.append({"Klasa": cls, "Metryka": "F1-Score", "Wartość": row['f1-score']})
-    
-    df_metrics = pd.DataFrame(data)
-    
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=df_metrics, x="Klasa", y="Wartość", hue="Metryka", palette="viridis")
-    plt.title("Jakość klasyfikacji w podziale na klasy", fontsize=14)
-    plt.ylim(0, 1.1)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
-    plt.savefig(output_dir / "metrics_by_class.png", dpi=300)
-    plt.close()
 
 def main(args):
     # 1. Ustalanie ścieżek wyjściowych
     weights_path = Path(args.weights)
     if not weights_path.exists():
         raise FileNotFoundError(f"Nie znaleziono pliku wag: {weights_path}")
+    
+    # Folder results tworzymy OBOK pliku z wagami
+    results_dir = weights_path.parent / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    logger = TrainingLogger(str(results_dir)).logger
          
     possible_paths = [
         weights_path.parent / "config.yaml",
@@ -100,7 +60,7 @@ def main(args):
             f"Szukano w: {[str(p) for p in possible_paths]}"
         )
 
-    print(f"Auto-detected config path: {config_path}")
+    logger.debug(f"Auto-detected config path: {config_path}")
 
     # 2. Wczytanie konfiguracji
     with open(config_path, "r") as f:
@@ -108,12 +68,7 @@ def main(args):
         
     device = torch.device(cfg["SYSTEM"]["DEVICE"] if args.num_gpus > 0 else "cpu")
     
-    # Folder results tworzymy OBOK pliku z wagami
-    results_dir = weights_path.parent / "results"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    
-    print(f"Loading weights from: {weights_path}")
-    print(f"Results will be saved to: {results_dir}")
+    logger.debug(f"Results will be saved to: {results_dir}")
 
     # 3. Wczytanie Słownika
     vocab_path = cfg["DATA"]["VOCAB_PATH"]
@@ -132,6 +87,7 @@ def main(args):
     model.to(device)
 
     # 5. Ładowanie stanu
+    logger.debug(f"Loading weights from: {weights_path}")
     checkpoint = torch.load(weights_path, map_location=device)
     if "model" in checkpoint:
         model.load_state_dict(checkpoint["model"])
@@ -142,7 +98,7 @@ def main(args):
 
     # 6. Ładowanie Danych Testowych
     test_path = str(Path(cfg["DATA"]["TRAIN_PATH"]).parent / "test_data.pt")
-    print(f"Loading test data from: {test_path}")
+    logger.info(f"Loading test data from: {test_path}")
     
     test_loader = build_data_loader(
         test_path, 
@@ -155,13 +111,17 @@ def main(args):
     all_preds = []
     all_labels = []
 
-    print("Running inference...")
+    logger.warning("Running inference...")
     with torch.no_grad():
         for batch in test_loader:
             event_ids = batch["event_ids"].to(device)
             time_feats = batch["time_feats"].to(device)
             lengths = batch["lengths"].to(device)
             labels = batch["labels"].to(device)
+
+            # --- ABLATION STUDY: Wyzerowanie czasu ---
+            #time_feats = torch.zeros_like(time_feats)
+            # -----------------------------------------
 
             #logits, *_ = model(event_ids, time_feats, lengths)
             #preds = torch.argmax(logits, dim=1)
@@ -177,13 +137,13 @@ def main(args):
             all_labels.extend(labels.cpu().numpy())
 
     # 8. Generowanie Raportów
-    print("\nGenerowanie raportów...")
+    logger.debug("Calculating metrics and generating reports...")
     
     # A. Classification Report (JSON + TXT)
     report_dict = classification_report(all_labels, all_preds, target_names=CLASS_NAMES, output_dict=True)
     report_txt = classification_report(all_labels, all_preds, target_names=CLASS_NAMES, output_dict=False, digits=4)
     
-    print(f"\n{report_txt}")
+    logger.info(f"\n{report_txt}")
     
     # Zapis raportu txt
     with open(results_dir / "classification_report.txt", "w") as f:
@@ -194,17 +154,18 @@ def main(args):
         json.dump(report_dict, f, indent=4)
 
     # B. Confusion Matrix
+    logger.debug("Generating confusion matrix and plots...")
     cm = confusion_matrix(all_labels, all_preds)
     
     # C. Generowanie Wykresów
-    save_plots(cm, report_dict, results_dir)
+    save_plots(cm, report_dict, results_dir, CLASS_NAMES)
     
-    print(f"\n[SUCCESS] Wszystkie wyniki zapisano w: {results_dir}")
+    logger.info(f"[SUCCESS] All results saved to: {results_dir}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    #parser.add_argument("--config", type=str, required=True, help="Path to config yaml")
     parser.add_argument("--weights", type=str, required=True, help="Path to .pth model file")
     parser.add_argument("--num-gpus", type=int, default=1, help="Number of GPUs")
     args = parser.parse_args()
+
     main(args)
