@@ -82,7 +82,10 @@ def main(args):
 
     # Wczytujemy dane bezpośrednio z pliku, żeby ominąć ograniczenia InfiniteDataLoader
     train_data_raw = torch.load(cfg["DATA"]["TRAIN_PATH"], weights_only=False)
+    # REAL DATA (default): labels stored as tensors under "labels"
     all_train_labels = [item["labels"].item() for item in train_data_raw]
+    # SIMULATION DATA: uncomment the line below and comment the one above
+    # all_train_labels = [item["label"] for item in train_data_raw]
     del train_data_raw  # Od razu zwalniamy pamięć RAM!
     class_counts = Counter(all_train_labels)
     total_samples = len(all_train_labels)
@@ -128,7 +131,7 @@ def main(args):
         labels = batch["labels"].to(device)
 
         # --- ABLATION STUDY: Wyzerowanie czasu ---
-        time_feats = torch.zeros_like(time_feats)
+        # time_feats = torch.zeros_like(time_feats)  # uncomment for the unimodal (v3) ablation
         # -----------------------------------------
 
         logits = model(event_ids, time_feats, lengths)
@@ -178,7 +181,7 @@ def main(args):
                     v_lbl = val_batch["labels"].to(device)
 
                     # --- ABLATION STUDY: Wyzerowanie czasu ---
-                    v_time = torch.zeros_like(v_time)
+                    # v_time = torch.zeros_like(v_time)  # uncomment for the unimodal (v3) ablation
                     # -----------------------------------------
 
                     v_logits = model(v_event, v_time, v_len)

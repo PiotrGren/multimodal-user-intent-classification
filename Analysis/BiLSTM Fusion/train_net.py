@@ -68,7 +68,9 @@ def main(args):
         lstm_hidden=int(cfg["MODEL"]["HIDDEN_DIM"]),
         lstm_layers=int(cfg["MODEL"]["LAYERS"]),
         dropout=float(cfg["MODEL"]["DROPOUT"]),
-        num_classes=int(cfg["MODEL"]["NUM_CLASSES"])
+        num_classes=int(cfg["MODEL"]["NUM_CLASSES"]),
+        # 1 = time only (real), 2 = time + price (real), 4 = simulation features
+        time_feat_dim=int(cfg["MODEL"].get("TIME_FEAT_DIM", 4)),
     )
     model = BiLSTMFusion(model_cfg)
     model.to(device)
@@ -80,7 +82,10 @@ def main(args):
     logger.info("Calculating dynamic class weights directly from file...")
     
     train_data_raw = torch.load(cfg["DATA"]["TRAIN_PATH"], weights_only=False)
+    # REAL DATA (default): labels stored as tensors under "labels"
     all_train_labels = [item["labels"].item() for item in train_data_raw]
+    # SIMULATION DATA: uncomment the line below and comment the one above
+    # all_train_labels = [item["label"] for item in train_data_raw]
     del train_data_raw  # Zwolnienie pamięci RAM
 
     class_counts = Counter(all_train_labels)

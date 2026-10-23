@@ -81,7 +81,9 @@ def main(args):
         lstm_hidden=int(cfg["MODEL"]["HIDDEN_DIM"]),
         lstm_layers=int(cfg["MODEL"]["LAYERS"]),
         dropout=float(cfg["MODEL"]["DROPOUT"]),
-        num_classes=int(cfg["MODEL"]["NUM_CLASSES"])
+        num_classes=int(cfg["MODEL"]["NUM_CLASSES"]),
+        # 1 = time only (real), 2 = time + price (real), 4 = simulation features
+        time_feat_dim=int(cfg["MODEL"].get("TIME_FEAT_DIM", 4)),
     )
     model = BiLSTMFusion(model_cfg)
     model.to(device)

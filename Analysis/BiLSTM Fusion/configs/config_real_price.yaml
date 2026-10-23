@@ -9,9 +9,9 @@ SYSTEM:
 
 DATA:
   # Należy upewnić się, że ścieżki wskazują na pliki wygenerowane przez process_data.py
-  TRAIN_PATH: "../data_real/train_data.pt"
-  VAL_PATH: "../data_real/val_data.pt"
-  VOCAB_PATH: "../data_real/vocab.json"
+  TRAIN_PATH: "../data_real_v2/train_data.pt"
+  VAL_PATH: "../data_real_v2/val_data.pt"
+  VOCAB_PATH: "../data_real_v2/vocab.json"
   NUM_WORKERS: 0  # Na Windows daj 0, na Linuxie 2-4
 
 MODEL:

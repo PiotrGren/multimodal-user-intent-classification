@@ -1,22 +1,39 @@
+# Python
+__pycache__/
 *.pyc
-__pycache__
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Secrets - use .env.example as a template
+.env
+.env.*
+!.env.example
+
+# Django / Celery / Redis runtime files
 db.sqlite3
-.vscode
-
-
-celerybeat-schedule-shm
-celerybeat-schedule-wal
+static/
 celerybeat-schedule*
-
-.env*.jsonl
-*.csv
 *.rdb
-legacy
-logs
 
-# dane
+# Logs and generated datasets (too large for git; regenerate with the scripts)
+logs/
+*.jsonl
+*.csv
 *.pt
 *.zip
+legacy/
 
-# opcjonalnie
+# Training checkpoints - only final weights (final/model_final.pth) are versioned
+*best_checkpoint.pth
+*last_checkpoint.pth
+*model_best.pth
 *.ckpt
+
+# OS junk
+*Zone.Identifier
+Thumbs.db
+.DS_Store

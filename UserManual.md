@@ -47,7 +47,7 @@ Należy upewnić się, że znajdują się tam wszystkie potrzebne pliki i katalo
 │   ├── docs/                           # (opcjonalnie) katalog z dokumentacją [DRAFT]
 │   │   └── ...
 │   ├── logs/                           # z początku pusty katalog
-│   └── process_data.py
+│   └── preprocess_data.py
 ├── FinanceApp/                         # Katalog główny aplikacji symulacyjnej
 │   └── stockProject - main             # WYMAGANY
 │       ├── loadTestingApp/             # DCI
@@ -252,13 +252,13 @@ pip install -r requirements.txt
 Gdy wszystkie zależności zostaną poprawnie zainstalowane, należy uruchomić plik, który przetworzy surowe logi na gotowe dane i sekwencje dla modelu. Są dwie opcje, pierwsza wczytuje logi z folderu **logs/** i zapisuje wyniki do folderu **data/**:
 
 ```bash
-python process_data.py
+python preprocess_data.py
 ```
 
 Jeżeli mamy logi w innym folderu i chcemy zapisać dane do innego folderu, możemy uruchomić skrypt z odpowiednimi flagami:
 
 ```bash
-python process_data.py --log_di ./moje_logi --output_dir ./gotowe_dane
+python preprocess_data.py --log-dir ./moje_logi --output-dir ./gotowe_dane
 ```
 
 Skrypt generuje dokładnie 4 pliki. Oto co w nich siedzi:
@@ -296,18 +296,18 @@ Analysis/                           # Katalog główny modeli, treningu i testow
 │   │   └── utils.py                # uniwersalne narzędzia pomocnicze (zapisy logów, checkpointów modelu czy obliczanie metryk)
 │   ├── test_net.py                 # skrypt uruchamiający trening modelu
 │   └── train_net.py                # skrypt uruchamiający test modelu
-├── data/                           # katalog z danymi wygenerowanymi przez skryp process_data.py
+├── data/                           # katalog z danymi wygenerowanymi przez skryp preprocess_data.py
 │   ├── test_data.pt
 │   ├── train_data.pt
 │   ├── val_data.pt
 │   └── vocab.json
 ├── docs/
 │   └── ...
-├── logs/                           # katalog z surowymi logami z symulacji (po przetworzeniu przez process_data.py już niepotrzebny)
+├── logs/                           # katalog z surowymi logami z symulacji (po przetworzeniu przez preprocess_data.py już niepotrzebny)
 │   ├── request_log.jsonl
 │   └── error_log.jsonl
 ├── requirements.txt
-└── process_data.py
+└── preprocess_data.py
 ```
 
 > ### Trening i ewaluacja

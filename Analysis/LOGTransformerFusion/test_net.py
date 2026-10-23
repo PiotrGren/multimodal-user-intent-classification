@@ -112,7 +112,7 @@ def main(args):
             labels = barch["labels"].to(device)
 
             # --- ABLATION STUDY: Wyzerowanie czasu ---
-            time_feats = torch.zeros_like(time_feats)
+            # time_feats = torch.zeros_like(time_feats)  # uncomment for the unimodal (v3) ablation
             # -----------------------------------------
 
             outputs = model(event_ids, time_feats, lengths)
